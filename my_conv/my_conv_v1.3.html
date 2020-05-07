@@ -1,0 +1,547 @@
+<!--Version 1.3 on 2020-05-05 by fieldrat-->
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=0.75">
+        <style>
+        #header {
+            background-color:black;
+            color:white;
+            text-align:center;
+            padding:5px;
+        }
+        #section {
+            background-color:white;
+            float:left;
+            padding:5px;
+            margin:5px;
+        }
+        </style>
+        
+        
+        <script>
+        // get the storage integer data of the single float number
+        function float2si(value)
+        {
+            const sign_len = 1;
+            const exponent_len = 8;
+            const mantissa_len = 23;
+
+            var sign_value = 0;
+            var exponent_value = 0;
+            var mantissa_value = 0;
+
+            var sign_data = 0;
+            var exponent_data = 0;
+            var mantissa_data = 0;
+
+            var si_data = 0;
+
+            // get sign_data
+            if( value < 0 )
+            {
+                sign_data = 1;
+                value = -value;
+            }
+            else
+            {
+                sign_data = 0;
+            }
+
+            // get exponent_data
+            exponent_value = Math.floor(Math.log(value)/Math.LN2);
+            if( exponent_value == Infinity || exponent_value == -Infinity )
+            {
+                //console.log(exponent_value); // debug
+                return [0, 0];
+            }
+
+            exponent_data = exponent_value + Math.pow(2, exponent_len-1) - 1;
+
+            // get mantissa_data
+            mantissa_value = value/Math.pow(2, exponent_value) - 1;
+            mantissa_data = get_mantissa_data(mantissa_value, mantissa_len);
+
+            // get storage_integer_data
+            si_data = sign_data * Math.pow(2, exponent_len+mantissa_len) + exponent_data * Math.pow(2, mantissa_len) + mantissa_data;
+
+            console.debug(arguments.callee.name, [sign_value, exponent_value, mantissa_value]);  // debug
+            console.debug(arguments.callee.name, [sign_data, exponent_data, "0x"+mantissa_data.toString(16), si_data]);  // debug
+
+            return si_data;
+        }
+        
+        
+        // get the single float number from the storage integer data
+        function si2float(si_data)
+        {
+            const sign_len = 1;
+            const exponent_len = 8;
+            const mantissa_len = 23;
+
+            var value = 0;
+
+            var sign_value = 0;
+            var exponent_value = 0;
+            var mantissa_value = 0;
+
+            var sign_data = 0;
+            var exponent_data = 0;
+            var mantissa_data = 0;
+
+            // split si_data
+            // do not use bit shift                   
+            sign_data = Math.floor( si_data/Math.pow(2, exponent_len+mantissa_len) );
+            exponent_data = Math.floor( si_data%Math.pow(2, exponent_len+mantissa_len)/Math.pow(2, mantissa_len) );
+            mantissa_data = si_data%Math.pow(2, mantissa_len);       
+            
+            // get value of each part
+            sign_value = Math.pow(-1, sign_data);
+            exponent_value = exponent_data - Math.pow(2, exponent_len-1) + 1;
+            mantissa_value = 1 + mantissa_data/Math.pow(2, mantissa_len);
+
+            // get value
+            value = sign_value * mantissa_value * Math.pow(2, exponent_value);
+
+            console.debug(arguments.callee.name, [sign_data, exponent_data, "0x"+mantissa_data.toString(16)]); // debug
+            console.debug(arguments.callee.name, [sign_value, exponent_value, mantissa_value, value]); // debug
+
+            return value;
+        }
+        
+        
+        // get the storage integer data of the fixed point value
+        function fixed2si(value, is_sign, mantissa_len)
+        {
+            const word_len = 32;
+
+            var sign_len = 0;
+            var integer_len = 0;
+
+            var sign_value = 0;
+            var integer_value = 0;
+            var mantissa_value = 0;
+
+            var sign_data = 0;
+            var integer_data = 0;
+            var mantissa_data = 0;
+            
+            var error_msg = "";
+
+            // check input            
+            if( is_sign >= 1 )
+            {
+                sign_len = 1;
+            }
+            else
+            {
+                sign_len = 0;
+            }
+
+            mantissa_len = Math.floor(mantissa_len);
+            if( mantissa_len<0 || mantissa_len>(word_len-sign_len) )
+            {
+                error_msg = "The mantissa length is invalid."
+                return [error_msg, undefined];
+            }
+
+            integer_len = word_len-sign_len-mantissa_len;
+
+            // get sign_data
+            if( value >= 0 )
+            {
+                sign_data = 0;
+            }
+            else if( is_sign < 1 )
+            {
+                error_msg = "Negative value, but unsigned fixed point"
+                return [error_msg, undefined];
+            }
+            else
+            {
+                sign_data = 1;
+                value = -value;
+            }
+
+            // get integer_data
+            integer_value = Math.floor(value);
+            if( integer_value > (Math.pow(2, integer_len)-1) )
+            {
+                integer_data = Math.pow(2, integer_len)-1;
+                error_msg = "Overflow"
+            }
+            else
+            {
+                integer_data = integer_value;
+            }
+
+            // get mantissa_data
+            mantissa_value = value - integer_value;
+            mantissa_data = get_mantissa_data(mantissa_value, mantissa_len);
+
+            // get storage_integer_data
+            si_data = sign_data * Math.pow(2, integer_len+mantissa_len) + integer_data * Math.pow(2, mantissa_len) + mantissa_data;
+
+            // debug
+            console.debug(arguments.callee.name, [sign_value, integer_value, mantissa_value]);
+            console.debug(arguments.callee.name, [sign_data, "0x"+integer_data.toString(16), "0x"+mantissa_data.toString(16), "0x"+si_data.toString(16)]);
+
+            return [error_msg, si_data];
+        }
+
+
+        // get the fixed point number from the storage integer data
+        function si2fixed(si_data, is_sign, mantissa_len)
+        {
+            const word_len = 32;
+
+            var sign_len = 0;
+            var integer_len = 0;
+
+            var sign_value = 0;
+            var integer_value = 0;
+            var mantissa_value = 0;
+
+            var sign_data = 0;
+            var integer_data = 0;
+            var mantissa_data = 0;
+
+            var error_msg = "";
+            
+            // check input
+            if( is_sign >= 1 )
+            {
+                sign_len = 1;
+            }
+            else
+            {
+                sign_len = 0;
+            }
+
+            mantissa_len = Math.floor(mantissa_len);
+            if( mantissa_len<0 || mantissa_len>(word_len-sign_len) )
+            {
+                error_msg = "The mantissa length is invalid"
+                return [error_msg, undefined];
+            }
+
+            integer_len = word_len-sign_len-mantissa_len;
+
+            // split si_data
+            // do not use bit shift        
+            sign_data = Math.floor( si_data/Math.pow(2, integer_len+mantissa_len) );
+            integer_data = Math.floor( si_data%Math.pow(2, integer_len+mantissa_len)/Math.pow(2, mantissa_len) );
+            mantissa_data = si_data%Math.pow(2, mantissa_len);       
+            
+            // get value of each data
+            sign_value = Math.pow(-1, sign_data);
+            integer_value = integer_data;
+            mantissa_value = mantissa_data/Math.pow(2, mantissa_len);
+
+            // get value
+            value = sign_value * (integer_value + mantissa_value);
+
+            // debug
+            console.debug(arguments.callee.name, [sign_data, "0x"+integer_data.toString(16), "0x"+mantissa_data.toString(16)]);
+            console.debug(arguments.callee.name, [sign_value, integer_value, mantissa_value, value]);
+
+            return [error_msg, value];
+        }
+    
+    
+        // get mantissa data of the mantissa value
+        function get_mantissa_data(mantissa_value, mantissa_len)
+        {
+            var mantissa_data = 0;
+            var i = 0;
+            var flag = 0;
+            var ref_value = 0;
+
+            var eps = Math.pow(2, -mantissa_len-1);
+            //console.debug("eps = %f", eps);  // debug
+
+            for(i=1; i<mantissa_len+1; i++)
+            {
+                ref_value = Math.pow(2, -i);
+                if(mantissa_value >= ref_value)
+                {
+                    flag  = 1;
+                }
+                else if( (ref_value - mantissa_value) < eps )
+                {
+                    flag  = 1;
+                }
+                else{
+                    flag  = 0;
+                }
+
+                //console.debug("[step %d] %f, -%f, %d, %f", i, mantissa_value, ref_value, flag, mantissa_value-ref_value);
+                mantissa_value = mantissa_value - ref_value*flag;
+                mantissa_data = mantissa_data*2 + flag;
+            }
+
+            return mantissa_data;
+        }
+        </script>
+    </head>
+
+
+    <body>
+        <div id="header">
+        <h1>数据的存储格式</h1>
+        <h3>Version 1.3 on 2020-05-05</h3>
+        </div>
+ 
+        <div id="nav">
+        </div>
+        
+        <div id="section">
+        <p><b>输入一个单精度浮点数(如123.4)</b></p>
+        <input type="text" id="single_in" style="border:1px solid #a0a0a0" onkeydown="if(event.keyCode==13){my_submit_single();return false;}">
+        <button type="button" onclick="my_submit_single()">提交</button>
+        <p id="single_out1">&nbsp</p>
+        <p id="single_out2">&nbsp</p>
+
+        <p><b>输入一个16进制存储格式(如0x42f6cccd)</b></p>
+        <input type="text" id="single_si_in" style="border:1px solid #a0a0a0" onkeydown="if(event.keyCode==13){my_submit_single_si();return false;}">
+        <button type="button" onclick="my_submit_single_si()">提交</button>
+        <p id="single_si_out1">&nbsp</p>
+        <p id="single_si_out2">&nbsp</p>
+
+        <p>
+            <HR>
+            <b>输入一个32位定点数(如123.4),&nbsp&nbsp符号位</b>
+            <input type="checkbox" name="is_sign" value="1" checked onclick="{my_submit_fixed();my_submit_fixed_si();}">
+            <b>&nbsp小数位</b>
+            <input type="text" id="mantissa_len" size="1" value="0" style="border:1px solid #a0a0a0" onkeydown="if(event.keyCode==13){my_submit_fixed();my_submit_fixed_si();return false;}">
+        </p>
+        <input type="text" id="fixed_in" style="border:1px solid #a0a0a0" onkeydown="if(event.keyCode==13){my_submit_fixed();return false;}">
+        <button type="button" onclick="my_submit_fixed()">提交</button>
+        <p id="fixed_out1">&nbsp</p>
+        <p id="fixed_out2">&nbsp</p>
+
+        <p><b>输入一个16进制存储格式(如0x42f6cccd)</b></p>
+        <input type="text" id="fixed_si_in" style="border:1px solid #a0a0a0"  onkeydown="if(event.keyCode==13){my_submit_fixed_si();return false;}">
+        <button type="button" onclick="my_submit_fixed_si()">提交</button>
+        <p id="fixed_si_out1">&nbsp</p>
+        <p id="fixed_si_out2">&nbsp</p>
+        </div>
+
+        <script>
+        function my_submit_single()
+        {
+            var x;
+            var y;
+            var text1, text2;
+
+            // 获取id="single_in"的输入字段的值
+            x = document.getElementById("single_in").value;
+
+            // 如果x是空
+            if(x=="")  
+            {
+                return 0;
+            }
+            else if(isNaN(x)) // 如果x不是数字
+            {
+                text1 = "输入无效";
+                text2 = "&nbsp";
+            }
+            else
+            {
+                y = float2si(x);
+                text1 = "实际输入数值: " + si2float(y);
+                text2 = "16进制存储值: 0x" + y.toString(16);
+            }
+            document.getElementById("single_out1").innerHTML = text1;
+            document.getElementById("single_out2").innerHTML = text2;
+        }
+        </script>
+
+        <script>
+        function my_submit_single_si()
+        {
+            var x;
+            var y;
+            var text1, text2;
+
+            // 获取id="si_in"的输入字段的值
+            x = document.getElementById("single_si_in").value;
+             
+            // 如果x是空
+            if(x=="") 
+            {
+                return 0;
+            }
+            else if(x.search( /^0[xX][0-9a-fA-F]{1,8}$/) == 0)  // 如果x是16进制存储格式
+            {
+                text1 = "实际输入数值: 0x" + parseInt(x, 16).toString(16);
+                text2 = "单精度浮点数: " + si2float(parseInt(x, 16));
+            }
+            else if( !isNaN(x) && x>=0 && x<Math.pow(2, 32)) // 如果x是10进制存储格式
+            {
+                text1 = "实际输入数值: 0x" + parseInt(x, 10).toString(16);
+                text2 = "单精度浮点数: " + si2float(x);
+            }
+            else
+            {
+                text1 = "输入无效";
+                text2 = "&nbsp";
+            }
+            
+            document.getElementById("single_si_out1").innerHTML = text1;
+            document.getElementById("single_si_out2").innerHTML = text2;
+        }
+        </script>
+        
+        
+        <script>
+        function my_submit_fixed()
+        {
+            var x;
+            var y;
+            var text1, text2;
+            
+            var is_sign = 1;
+            var mantissa_len = 0;
+
+            // 获取name="is_sign"的输入字段的值
+            x = document.getElementsByName("is_sign");
+            if(x[0].checked)
+            {
+                is_sign = 1;
+            }
+            else
+            {
+                is_sign = 0;
+            }
+
+            // 获取id="mantissa_len"的输入字段的值
+            x = document.getElementById("mantissa_len").value;
+            if( isNaN(x) || x<0 || x>32 )
+            {
+                text1 = "小数位输入无效";
+                text2 = "&nbsp";
+            }
+            else
+            {
+                mantissa_len = Math.floor(x);
+               
+                // 获取id="fixed_in"的输入字段的值
+                x = document.getElementById("fixed_in").value;
+
+                // 如果x是空
+                if(x=="") 
+                {
+                    return 0;
+                }
+                else if(isNaN(x))  // 如果x不是数字
+                {
+                    text1 = "输入无效";
+                    text2 = "&nbsp";
+                }
+                else
+                {
+                    y = fixed2si(x, is_sign, mantissa_len);
+                    if(isNaN(y[1]))
+                    {
+                        text1 = "错误: " + y[0];
+                        text2 = "&nbsp";
+                    }
+                    else
+                    {
+                        text1 = "实际输入数值: " + si2fixed(y[1], is_sign, mantissa_len)[1] + "&nbsp&nbsp&nbsp&nbsp" + y[0];
+                        text2 = "16进制存储值: 0x" + y[1].toString(16);
+                    }
+                }
+            }
+            
+            document.getElementById("fixed_out1").innerHTML = text1;
+            document.getElementById("fixed_out2").innerHTML = text2;
+        }
+        </script>
+        
+        
+        <script>
+        function my_submit_fixed_si()
+        {
+            var x;
+            var y;
+            var text1, text2;
+            
+            var is_sign = 1;
+            var mantissa_len = 0;
+            
+            // 获取name="is_sign"的输入字段的值
+            x = document.getElementsByName("is_sign");
+            if(x[0].checked)
+            {
+                is_sign = 1;
+            }
+            else
+            {
+                is_sign = 0;
+            }
+            
+            // 获取id="mantissa_len"的输入字段的值
+            x = document.getElementById("mantissa_len").value;
+            if( isNaN(x) || x<0 || x>32 )
+            {
+                text1 = "小数位输入无效";
+                text2 = "&nbsp";
+            }
+            else
+            {
+                mantissa_len = Math.floor(x);
+                
+                // 获取id="fixed_si_in"的输入字段的值
+                x = document.getElementById("fixed_si_in").value;
+
+                // 如果x是空
+                if(x=="") 
+                {
+                    return 0;
+                }
+                else if(x.search( /^0[xX][0-9a-fA-F]{1,8}$/) == 0)  // 如果x是16进制存储格式
+                {
+                    y = si2fixed(parseInt(x, 16), is_sign, mantissa_len);
+                    
+                    if(isNaN(y[1]))
+                    {
+                        text1 = "错误: "+y[0];
+                        text2 = "&nbsp";
+                    }
+                    else
+                    {
+                        text1 = "实际输入数值: 0x" + parseInt(x, 16).toString(16);
+                        text2 = "对应的定点数: " + y[1];
+                    }
+                }
+                else if( !isNaN(x) && x>=0 && x<Math.pow(2, 32))  // 如果x是10进制存储格式
+                {                   
+                    y = si2fixed(parseInt(x, 10), is_sign, mantissa_len);
+                    
+                    if(isNaN(y[1]))
+                    {
+                        text1 = "错误: "+y[0];
+                        text2 = "&nbsp";
+                    }
+                    else
+                    {
+                        text1 = "实际输入数值: 0x" + parseInt(x, 10).toString(16);
+                        text2 = "对应的定点数: " + y[1];
+                    }
+                }
+                else
+                {
+                    text1 = "输入无效";
+                    text2 = "&nbsp";
+                }
+            }
+            
+            document.getElementById("fixed_si_out1").innerHTML = text1;
+            document.getElementById("fixed_si_out2").innerHTML = text2;
+        }
+        </script>
+    </body>
+</html>
